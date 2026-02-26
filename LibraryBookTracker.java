@@ -11,7 +11,7 @@ public class LibraryBookTracker {
     private static int booksAdded = 0;
     private static int errorsEncountered = 0;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         try {
             if (args.length < 2) {
                 throw new InsufficientArgumentsException("Need at least 2 arguments");
@@ -20,9 +20,18 @@ public class LibraryBookTracker {
             if (!filePath.endsWith(".txt")) {
                 throw new InvalidFileNameException("File name must end with .txt");
             }
-            
-            // run the program
-            mangeprocess(filePath, args[1]);
+            String operation = args[1];
+            ArrayList<Book> allBooks = new ArrayList<>();
+            // Load the file in a separate thread
+            Thread fileThread = new Thread(new FileReaderThread(filePath, allBooks));
+            Thread opThread = new Thread(new OperationAnalyzerThread(operation, allBooks, filePath));
+            fileThread.start();
+            fileThread.join();// wait the firs thread to finish
+
+            opThread.start();
+            opThread.join();
+
+            // mangeprocess(filePath, allBooks);
 
             System.out.println("\n--- Final Statistics ---");
             System.out.println("Valid records processed: " + validRecords);
@@ -42,6 +51,7 @@ public class LibraryBookTracker {
 
     /**
      * Records errors to 'errors.log' in the catalog's directory.
+     * 
      * @param catalogFilePath
      * @param offendingLine
      * @param e
@@ -63,7 +73,7 @@ public class LibraryBookTracker {
             String errorMessage = e.getMessage();
 
             logWriter.printf("[%s] INVALID INPUT: \"%s\" - %s: %s%n",
-                             timestamp, offendingLine, errorType, errorMessage);
+                    timestamp, offendingLine, errorType, errorMessage);
 
         } catch (IOException ioException) {
             System.err.println("Failed to write to error log: " + ioException.getMessage());
@@ -77,11 +87,13 @@ public class LibraryBookTracker {
 
     private static void printBookRow(Book b) {
         System.out.printf("%-30s %-20s %-15s %5d%n",
-                          b.getTitle(), b.getAuthor(), b.getISBN(), b.getCopies());
+                b.getTitle(), b.getAuthor(), b.getISBN(), b.getCopies());
     }
 
     /**
-     * Adds a new book to the catalog, updates the file, and prints the updated catalog.
+     * Adds a new book to the catalog, updates the file, and prints the updated
+     * catalog.
+     * 
      * @param record
      * @param books
      * @param catalogFilePath
@@ -115,20 +127,25 @@ public class LibraryBookTracker {
     }
 
     /**
-     * Loads the catalog file, creates Book objects for valid entries, and logs errors for invalid entries.
+     * Loads the catalog file, creates Book objects for valid entries, and logs
+     * errors for invalid entries.
+     * 
      * @param filePath
      * @param books
      */
     private static void loadFile(String filePath, ArrayList<Book> books) {
         File file = new File(filePath);
         try {
-            if (file.getParentFile() != null) file.getParentFile().mkdirs();
-            if (!file.exists()) file.createNewFile();
-            
+            if (file.getParentFile() != null)
+                file.getParentFile().mkdirs();
+            if (!file.exists())
+                file.createNewFile();
+
             try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    if (line.trim().isEmpty()) continue; // Skip empty lines
+                    if (line.trim().isEmpty())
+                        continue; // Skip empty lines
                     try {
                         books.add(new Book(line));
                         validRecords++;
@@ -144,55 +161,57 @@ public class LibraryBookTracker {
     }
 
     /**
- * Searches the catalog for books matching the query (by ISBN or title) and prints results.
- * @param query
- * @param bookList
- * @param fileName
- * @throws DuplicateISBNException
-*/
-private static void Search(String query, ArrayList<Book> bookList, String fileName) throws DuplicateISBNException {
-    printHeader();
-    String cleanQuery = query.trim(); 
+     * Searches the catalog for books matching the query (by ISBN or title) and
+     * prints results.
+     * 
+     * @param query
+     * @param bookList
+     * @param fileName
+     * @throws DuplicateISBNException
+     */
+    private static void Search(String query, ArrayList<Book> bookList, String fileName) throws DuplicateISBNException {
+        printHeader();
+        String cleanQuery = query.trim();
 
-    if (cleanQuery.matches("\\d{13}")) {
-        // ISBN Search
-        ArrayList<Book> results = new ArrayList<>();
-        for (Book b : bookList) {
-            if (b.getISBN().trim().equals(cleanQuery)) {
-                results.add(b);
+        if (cleanQuery.matches("\\d{13}")) {
+            // ISBN Search
+            ArrayList<Book> results = new ArrayList<>();
+            for (Book b : bookList) {
+                if (b.getISBN().trim().equals(cleanQuery)) {
+                    results.add(b);
+                }
             }
-        }
 
-        if (results.size() == 1) {
-            printBookRow(results.get(0));
-            searchResults = 1;
-        } else if (results.size() > 1) {
-            throw new DuplicateISBNException("Multiple books found with ISBN: " + cleanQuery);
+            if (results.size() == 1) {
+                printBookRow(results.get(0));
+                searchResults = 1;
+            } else if (results.size() > 1) {
+                throw new DuplicateISBNException("Multiple books found with ISBN: " + cleanQuery);
+            } else {
+                System.out.println("No book found with ISBN: " + cleanQuery);
+            }
         } else {
-            System.out.println("No book found with ISBN: " + cleanQuery);
-        }
-    } else {
-        // Title Search
-        for (Book b : bookList) {
-            if (b.getTitle().toLowerCase().contains(cleanQuery.toLowerCase())) {
-                printBookRow(b);
-                searchResults++;
+            // Title Search
+            for (Book b : bookList) {
+                if (b.getTitle().toLowerCase().contains(cleanQuery.toLowerCase())) {
+                    printBookRow(b);
+                    searchResults++;
+                }
             }
-        }
-        if (searchResults == 0) {
-            System.out.println("No books found matching title: " + cleanQuery);
+            if (searchResults == 0) {
+                System.out.println("No books found matching title: " + cleanQuery);
+            }
         }
     }
-}
-/**
- * 
- * @param filePath
- * @param operation
-*/
-    private static void mangeprocess(String filePath, String operation) {
-        ArrayList<Book> allBooks = new ArrayList<>();
 
-        loadFile(filePath, allBooks);
+    /**
+     * 
+     * @param filePath
+     * @param operation
+     */
+    private static void mangeprocess(String filePath, String operation, ArrayList<Book> allBooks) {
+        // ArrayList<Book> allBooks = new ArrayList<>(); shared list from main thread
+        // loadFile(filePath, allBooks); will handle it in the main thread
         try {
             if (operation.contains(":") && operation.split(":").length >= 4) {
                 addNewBook(operation, allBooks, filePath);
@@ -203,6 +222,44 @@ private static void Search(String query, ArrayList<Book> bookList, String fileNa
             System.out.println("Error: " + e.getMessage());
             recordErrorToLog(filePath, operation, e);
             errorsEncountered++;
+        }
+    }
+    
+//inner classes for threads to handle file loading and operation analysis concurrently
+    private static class FileReaderThread implements Runnable {
+        private String filePath;
+        private ArrayList<Book> sharedListBooks;
+
+        public FileReaderThread(String filePath, ArrayList<Book> sharedListBooks) {
+            this.filePath = filePath;
+            this.sharedListBooks = sharedListBooks;
+        }
+
+        @Override
+        public void run() {
+            System.out.println("Starting load file thread");
+            loadFile(filePath, sharedListBooks);
+            System.out.println("File loading complete");
+
+        }
+    }
+
+    private static class OperationAnalyzerThread implements Runnable {
+        private String operation;
+        private String filePath;
+        private ArrayList<Book> sharedListBooks;
+
+        public OperationAnalyzerThread(String operation, ArrayList<Book> shArrayListBooks, String filePath) {
+            this.operation = operation;
+            this.filePath = filePath;
+            this.sharedListBooks = shArrayListBooks;
+        }
+
+        @Override
+        public void run() {
+            System.out.println("Starting operation analyzer thread");
+            mangeprocess(filePath, operation, sharedListBooks);
+            System.out.println("Operation Analyzer complete");
         }
     }
 }
